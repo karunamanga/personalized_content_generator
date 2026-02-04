@@ -94,6 +94,44 @@ Format:
 // ===============================
 // Start Server
 // ===============================
+// Minimal proxy endpoint to connect the PDF microservice running on port 3333.
+// Accepts { github_url: string } and forwards a JSON-RPC call to the microservice.
+app.post("/read-pdf", async (req, res) => {
+  const { github_url } = req.body;
+
+  if (!github_url) {
+    return res.status(400).json({ error: "github_url is required" });
+  }
+
+  const rpcBody = {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "tools/call",
+    params: {
+      name: "read_github_pdf",
+      arguments: { github_url }
+    }
+  };
+
+  try {
+    const upstream = await fetch("http://localhost:3333", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(rpcBody),
+    });
+
+    const json = await upstream.json();
+
+    if (upstream.ok && json.result) {
+      return res.json(json.result);
+    }
+
+    return res.status(500).json({ error: json.error || "Upstream error" });
+  } catch (err) {
+    console.error("PDF proxy error:", err);
+    return res.status(500).json({ error: err.message });
+  }
+});
 
 app.listen(5000, () => {
   console.log("✅ Backend running on http://localhost:5000");
