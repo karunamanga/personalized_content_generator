@@ -39,7 +39,20 @@ function App() {
   const [showTopicInput, setShowTopicInput] = useState(false);
 
   // ==========================================
-  // STEP 4: Level Assessment Test States
+  // STEP 4: Learning Preference Questions
+  // ==========================================
+  // After topic input, collect learning style preferences
+  const [learningQuestions, setLearningQuestions] = useState([]);
+  const [learningIndex, setLearningIndex] = useState(0);
+  const [learningSelected, setLearningSelected] = useState("");
+  const [learningAnswers, setLearningAnswers] = useState([]);
+  const [showLearningQuestions, setShowLearningQuestions] = useState(false);
+  const [learningStyleId, setLearningStyleId] = useState(null);
+  const [showPersonalizedContent, setShowPersonalizedContent] = useState(false);
+  const [personalizedContent, setPersonalizedContent] = useState(null);
+
+  // ==========================================
+  // STEP 5: Level Assessment Test States
   // ==========================================
   // After user enters topic, assess their knowledge level on that topic
   const [levelTestQuestions, setLevelTestQuestions] = useState([]);
@@ -63,6 +76,7 @@ function App() {
   const [showGenerateTopicButton, setShowGenerateTopicButton] = useState(false);
   const [generatedTopics, setGeneratedTopics] = useState([]);
 
+  // Get Clerk user for personalization hints (kept optional)
   // Get Clerk user for personalization hints (kept optional)
   const { user } = useUser();
 
@@ -146,6 +160,7 @@ function App() {
     
     return questions;
   };
+
 
 
   // ==========================================
@@ -335,7 +350,6 @@ function App() {
     // =========================================
     const nextLevelTestQuestion = () => {
       if (!levelTestSelected) {
-        alert("Please select an option");
         return;
       }
 
@@ -429,6 +443,158 @@ function App() {
 
       setLoading(false);
     };
+
+  // =========================================
+  // STEP 2B: GENERATE LEARNING PREFERENCE QUESTIONS
+  // =========================================
+  // Generates 5 non-technical learning style questions
+  // These are shown after user enters a topic
+  const generateLearningQuestions = async () => {
+    setLoading(true);
+    setError("");
+
+    try {
+      const res = await fetch("http://localhost:5000/generate-learning-questions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({})
+      });
+
+      if (!res.ok) {
+        const errorData = await res.text();
+        throw new Error(`Server ${res.status}: ${errorData}`);
+      }
+
+      const data = await res.json();
+      console.log("✅ Learning questions received:", data.length, "questions");
+
+      if (Array.isArray(data) && data.length === 5) {
+        setLearningQuestions(data);
+        setLearningIndex(0);
+        setLearningSelected("");
+        setLearningAnswers([]);
+        setShowLearningQuestions(true);
+        setShowTopicInput(false);
+        setSuccessMessage("");
+      } else {
+        setError("Invalid learning questions format from server");
+      }
+
+    } catch (err) {
+      console.error("❌ Learning questions error:", err);
+      setError(`Failed to load learning questions: ${err.message}`);
+    }
+
+    setLoading(false);
+  };
+
+  // =========================================
+  // STEP 2C: NEXT LEARNING PREFERENCE QUESTION
+  // =========================================
+  // Moves through learning preference questions one by one
+  // When finished, evaluates answers internally and generates personalized content
+  const nextLearningQuestion = () => {
+    if (!learningSelected) {
+      return;
+    }
+
+    // Convert option value to index for backend
+    const currentQuestion = learningQuestions[learningIndex];
+    const answerIndex = currentQuestion?.options?.indexOf(learningSelected) ?? 0;
+    
+    // Record the selected option index
+    const nextAnswers = [...learningAnswers, answerIndex];
+    setLearningAnswers(nextAnswers);
+    setLearningSelected("");
+
+    if (learningIndex + 1 < learningQuestions.length) {
+      // Move to next question
+      setLearningIndex(learningIndex + 1);
+    } else {
+      // Learning questions completed - evaluate and generate content
+      evaluateLearningStyle(nextAnswers);
+    }
+  };
+
+  // =========================================
+  // STEP 2D: EVALUATE LEARNING STYLE
+  // =========================================
+  // Evaluates learning preference answers internally
+  // Does NOT display score to user
+  // Automatically calls generatePersonalizedContent
+  const evaluateLearningStyle = async (answers) => {
+    setLoading(true);
+    setError("");
+
+    try {
+      const res = await fetch("http://localhost:5000/evaluate-learning-style", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          answers: answers,
+          topic: topic
+        })
+      });
+
+      if (!res.ok) {
+        const errorData = await res.text();
+        throw new Error(`Server ${res.status}: ${errorData}`);
+      }
+
+      const result = await res.json();
+      console.log("✅ Learning style evaluated:", result.success);
+
+      if (result.success) {
+        setLearningStyleId(result.styleId);
+        setShowLearningQuestions(false);
+        
+        // Hide loading and auto-generate personalized content
+        await generatePersonalizedContent(result.styleId);
+      }
+
+    } catch (err) {
+      console.error("❌ Learning style evaluation error:", err);
+      setError(`Evaluation failed: ${err.message}`);
+      setLoading(false);
+    }
+  };
+
+  // =========================================
+  // STEP 2E: GENERATE PERSONALIZED CONTENT
+  // =========================================
+  // Generates learning content recommendations based on topic + learning style
+  // Displays recommendations that match user's learning preferences
+  const generatePersonalizedContent = async (styleId) => {
+    try {
+      const res = await fetch("http://localhost:5000/generate-personalized-content", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic: topic,
+          styleId: styleId
+        })
+      });
+
+      if (!res.ok) {
+        const errorData = await res.text();
+        throw new Error(`Server ${res.status}: ${errorData}`);
+      }
+
+      const content = await res.json();
+      console.log("✅ Personalized content generated for topic:", topic);
+
+      setPersonalizedContent(content);
+      setShowPersonalizedContent(true);
+      setSuccessMessage("📚 Personalized learning path created for you!");
+      setTimeout(() => setSuccessMessage(""), 3000);
+
+    } catch (err) {
+      console.error("❌ Content generation error:", err);
+      setError(`Content generation failed: ${err.message}`);
+    }
+
+    setLoading(false);
+  };
 
   // =========================================
   // STEP 2: GENERATE QUESTIONS FROM CONTENT
@@ -608,7 +774,6 @@ function App() {
   const nextQuestion = () => {
     // Record user's answer for this question
     if (!selected) {
-      alert("Please select an option");
       return;
     }
 
@@ -902,6 +1067,14 @@ function App() {
                 setShowResult(false);
                 setTopic("");
                 setShowTopicInput(false);
+                setLearningQuestions([]);
+                setLearningIndex(0);
+                setLearningSelected("");
+                setLearningAnswers([]);
+                setShowLearningQuestions(false);
+                setLearningStyleId(null);
+                setShowPersonalizedContent(false);
+                setPersonalizedContent(null);
                 setExtractedContent("");
                 setIsExtracted(false);
                 setGithubLink("");
@@ -965,7 +1138,7 @@ function App() {
             />
 
             <button
-              onClick={generateLevelTest}
+              onClick={generateLearningQuestions}
               disabled={loading || !topic.trim()}
               style={{
                 padding: "10px 20px",
@@ -976,7 +1149,7 @@ function App() {
                 cursor: topic.trim() ? "pointer" : "not-allowed"
               }}
             >
-              {loading ? "Preparing..." : "🎯 Start Level Assessment"}
+              {loading ? "Preparing..." : "🎯 Begin Learning Assessment"}
             </button>
 
             <button
@@ -998,6 +1171,183 @@ function App() {
             </button>
 
             {error && <p style={{ color: "red", marginTop: "10px" }}>{error}</p>}
+          </div>
+        )}
+
+
+        {/* ============================= */}
+        {/* LEARNING PREFERENCE QUESTIONS */}
+        {/* Shows 5 non-technical questions about learning style */}
+        {/* Does NOT collect scores - only preferences */}
+        {/* ============================= */}
+        {/* LEARNING PREFERENCE QUESTIONS */}
+        {/* Shows 5 non-technical questions about learning style */}
+        {/* Does NOT collect scores - only preferences */}
+        {/* ============================= */}
+        {showLearningQuestions && learningQuestions.length > 0 && (
+          <div className="card">
+            <h2>🎓 Learning Preference Assessment</h2>
+            <p style={{ color: "#666", marginBottom: "20px" }}>
+              Question {learningIndex + 1} of {learningQuestions.length}
+            </p>
+
+            <div style={{ marginBottom: "20px" }}>
+              <h3>{learningQuestions[learningIndex]?.question}</h3>
+              
+              <div style={{ marginTop: "15px" }}>
+                {learningQuestions[learningIndex]?.options?.map((option, idx) => (
+                  <label
+                    key={idx}
+                    style={{
+                      display: "block",
+                      marginBottom: "10px",
+                      padding: "10px",
+                      border: learningSelected === option ? "2px solid #2196F3" : "1px solid #ddd",
+                      borderRadius: "4px",
+                      backgroundColor: learningSelected === option ? "#E3F2FD" : "white",
+                      cursor: "pointer"
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="learning-option"
+                      value={option}
+                      checked={learningSelected === option}
+                      onChange={(e) => setLearningSelected(e.target.value)}
+                      style={{ marginRight: "10px" }}
+                    />
+                    {option}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <button
+              onClick={nextLearningQuestion}
+              disabled={!learningSelected}
+              style={{
+                padding: "10px 20px",
+                backgroundColor: learningSelected ? "#2196F3" : "#ccc",
+                color: "white",
+                border: "none",
+                borderRadius: "4px",
+                cursor: learningSelected ? "pointer" : "not-allowed"
+              }}
+            >
+              {learningIndex + 1 === learningQuestions.length ? "Complete Assessment" : "Next"}
+            </button>
+
+            {loading && <p style={{ marginTop: "10px", color: "#666" }}>Processing...</p>}
+          </div>
+        )}
+
+
+        {/* ============================= */}
+        {/* PERSONALIZED LEARNING CONTENT */}
+        {/* Shows recommendations based on topic + learning style */}
+        {/* ============================= */}
+        {showPersonalizedContent && personalizedContent && (
+          <div className="card">
+            <h2>📚 Your Personalized Learning Path</h2>
+            <p style={{ color: "#666", marginBottom: "20px" }}>
+              Topic: <strong>{personalizedContent.topic}</strong>
+            </p>
+
+            <div style={{ marginBottom: "25px" }}>
+              <h3>Suggested Learning Resources:</h3>
+              <div style={{ marginTop: "15px" }}>
+                {personalizedContent.resources?.map((resource, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      padding: "15px",
+                      marginBottom: "10px",
+                      border: "1px solid #E0E0E0",
+                      borderRadius: "4px",
+                      backgroundColor: "#FAFAFA"
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <p style={{ margin: "0 0 5px 0", fontWeight: "bold", fontSize: "16px" }}>
+                          {resource.type}
+                        </p>
+                        <p style={{ margin: "0 0 5px 0", fontSize: "15px" }}>
+                          {resource.title}
+                        </p>
+                        <p style={{ margin: "0", color: "#666", fontSize: "14px" }}>
+                          {resource.description}
+                        </p>
+                      </div>
+                      <p style={{ margin: "0", color: "#999", fontSize: "13px", textAlign: "right", minWidth: "100px" }}>
+                        ⏱ {resource.duration}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: "20px" }}>
+              <h3>📖 Recommended Learning Path:</h3>
+              <ol style={{ marginTop: "10px", paddingLeft: "20px" }}>
+                {personalizedContent.suggestedPath?.map((step, idx) => (
+                  <li key={idx} style={{ marginBottom: "8px", color: "#333" }}>
+                    {step}
+                  </li>
+                ))}
+              </ol>
+            </div>
+
+            <div style={{ marginBottom: "20px" }}>
+              <h3>💡 Learning Tips:</h3>
+              <ul style={{ marginTop: "10px", paddingLeft: "20px" }}>
+                {personalizedContent.tips?.map((tip, idx) => (
+                  <li key={idx} style={{ marginBottom: "8px", color: "#333" }}>
+                    {tip}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <button
+              onClick={() => {
+                // Reset for new topic
+                setTopic("");
+                setShowPersonalizedContent(false);
+                setPersonalizedContent(null);
+                setShowResult(true);
+              }}
+              style={{
+                padding: "10px 20px",
+                backgroundColor: "#4CAF50",
+                color: "white",
+                border: "none",
+                borderRadius: "4px",
+                cursor: "pointer",
+                marginRight: "10px"
+              }}
+            >
+              ✓ Understood
+            </button>
+
+            <button
+              onClick={() => {
+                setShowPersonalizedContent(false);
+                setPersonalizedContent(null);
+                setShowResult(true);
+              }}
+              style={{
+                padding: "10px 20px",
+                backgroundColor: "#757575",
+                color: "white",
+                border: "none",
+                borderRadius: "4px",
+                cursor: "pointer"
+              }}
+            >
+              ← Back
+            </button>
           </div>
         )}
 

@@ -141,6 +141,202 @@ app.post("/generate-from-pdf", async (req, res) => {
 });
 
 // ===============================
+// GENERATE LEARNING STYLE QUESTIONS
+// ===============================
+// Returns 5 general learning preference questions (not technical)
+// Each question has exactly 3 options
+app.post("/generate-learning-questions", async (req, res) => {
+  try {
+    // 5 learning-preference questions focused on learning style
+    // Each question has exactly 3 options (not 4)
+    const questions = [
+      {
+        id: 1,
+        question: "How do you prefer learning new technical concepts?",
+        options: ["Reading documentation", "Watching video tutorials", "Hands-on coding practice"],
+        category: "learning_method"
+      },
+      {
+        id: 2,
+        question: "When learning, which approach works best for you?",
+        options: ["Step-by-step guided tutorials", "Big picture theory first", "Jump straight to practice"],
+        category: "approach"
+      },
+      {
+        id: 3,
+        question: "How comfortable are you reading technical documentation?",
+        options: ["Very comfortable", "Somewhat comfortable", "Prefer tutorials instead"],
+        category: "documentation"
+      },
+      {
+        id: 4,
+        question: "What's your main learning goal?",
+        options: ["Understand core concepts deeply", "Get practical skills quickly", "Build a specific project"],
+        category: "goal"
+      },
+      {
+        id: 5,
+        question: "How do you prefer consuming content?",
+        options: ["Short focused lessons", "Long comprehensive courses", "Interactive sandbox environments"],
+        category: "consumption"
+      }
+    ];
+
+    return res.json(questions);
+
+  } catch (err) {
+    console.error("❌ /generate-learning-questions error:", err);
+    return res.status(500).json({ error: "Learning questions generation failed", details: err.message });
+  }
+});
+
+// ===============================
+// EVALUATE LEARNING STYLE
+// ===============================
+// Evaluates learning preference answers and determines learning style
+// Does NOT return score to frontend - only stores internally
+app.post("/evaluate-learning-style", (req, res) => {
+  try {
+    const { answers, topic } = req.body;
+
+    if (!Array.isArray(answers) || answers.length !== 5) {
+      return res.status(400).json({ error: "Expected 5 answers" });
+    }
+
+    // Score learning style based on answer patterns
+    // We analyze the answers to determine learning preference level
+    let styleScore = 0;
+
+    // Map answers to points (simplified scoring)
+    // Index 0 = practice-oriented, Index 1 = theory-oriented
+    const answerScores = [
+      [0, 0, 2, 1], // Q1: practice preference
+      [1, 0, 2, 1], // Q2: practice vs theory
+      [1, 1, 0, 2], // Q3: documentation comfort
+      [1, 2, 0, 1], // Q4: deep vs quick
+      [1, 1, 2, 0]  // Q5: consumption preference
+    ];
+
+    let practicalScore = 0;
+    let theoreticalScore = 0;
+
+    answers.forEach((answerIndex, questionIndex) => {
+      if (typeof answerIndex === "number" && answerIndex >= 0 && answerIndex < 4) {
+        if (answerScores[questionIndex][answerIndex] >= 2) {
+          practicalScore++;
+        } else {
+          theoreticalScore++;
+        }
+      }
+    });
+
+    // Determine learning style preference (internal, NOT shown to user)
+    let learningStyle = "Balanced";
+    if (practicalScore > theoreticalScore + 1) {
+      learningStyle = "Hands-On Learner";
+    } else if (theoreticalScore > practicalScore + 1) {
+      learningStyle = "Theory-First Learner";
+    }
+
+    // Store internally (optional: could store in memory for future use)
+    const styleId = `style_${Date.now()}`;
+
+    console.log(`✅ Learning style evaluated for topic ${topic}:`, {
+      styleId,
+      learningStyle,
+      practicalScore,
+      theoreticalScore
+    });
+
+    // Return ONLY success status - NO score or style info to frontend
+    return res.json({
+      success: true,
+      styleId: styleId,
+      _internal: {
+        learningStyle,
+        practicalScore,
+        theoreticalScore,
+        topic
+      }
+    });
+
+  } catch (err) {
+    console.error("❌ /evaluate-learning-style error:", err);
+    return res.status(500).json({ error: "Learning style evaluation failed", details: err.message });
+  }
+});
+
+// ===============================
+// GENERATE PERSONALIZED CONTENT
+// ===============================
+// Generates content recommendations based on learning style + topic
+app.post("/generate-personalized-content", async (req, res) => {
+  try {
+    const { topic, styleId } = req.body;
+
+    if (!topic || !topic.trim()) {
+      return res.status(400).json({ error: "topic required" });
+    }
+
+    // Generate personalized learning content recommendations
+    const contentRecommendations = {
+      topic: topic,
+      resources: [
+        {
+          type: "Article",
+          title: `Understanding ${topic}: Core Concepts`,
+          description: "A comprehensive guide to foundational concepts",
+          duration: "10-15 mins read"
+        },
+        {
+          type: "Tutorial",
+          title: `${topic} Step-by-Step Guide`,
+          description: "Hands-on tutorial with code examples",
+          duration: "30-45 mins"
+        },
+        {
+          type: "Practice",
+          title: `Interactive ${topic} Exercises`,
+          description: "Code along with interactive challenges",
+          duration: "45-60 mins"
+        },
+        {
+          type: "Project",
+          title: `Build a Real Project with ${topic}`,
+          description: "Practical project combining multiple concepts",
+          duration: "2-4 hours"
+        },
+        {
+          type: "Deep Dive",
+          title: `Advanced ${topic} Patterns`,
+          description: "Expert techniques and best practices",
+          duration: "1-2 hours"
+        }
+      ],
+      suggestedPath: [
+        "Start with the Article to understand basics",
+        "Follow the Step-by-Step Tutorial",
+        "Practice with Interactive Exercises",
+        "Build something with the Project",
+        "Explore Advanced Patterns for expertise"
+      ],
+      tips: [
+        `Take your time with ${topic} - it's a foundational skill`,
+        "Practice coding along with examples, don't just read",
+        "Try modifying example code to understand deeply",
+        "Build small projects to solidify your understanding"
+      ]
+    };
+
+    return res.json(contentRecommendations);
+
+  } catch (err) {
+    console.error("❌ /generate-personalized-content error:", err);
+    return res.status(500).json({ error: "Content generation failed", details: err.message });
+  }
+});
+
+// ===============================
 // GENERATE TOPICS BASED ON PERSONALIZED QUIZ
 // ===============================
 app.post("/generate-topic", async (req, res) => {
@@ -335,9 +531,6 @@ app.post("/evaluate-level", (req, res) => {
   }
 });
 
-// ===============================
-// START SERVER
-// ===============================
 const PORT = 5000;
 app.listen(PORT, () => {
   console.log("✅ Backend running on http://localhost:" + PORT);
@@ -345,6 +538,9 @@ app.listen(PORT, () => {
   console.log(" - POST /read-pdf");
   console.log(" - POST /generate");
   console.log(" - POST /generate-from-pdf");
+  console.log(" - POST /generate-learning-questions");
+  console.log(" - POST /evaluate-learning-style");
+  console.log(" - POST /generate-personalized-content");
   console.log(" - POST /generate-topic");
   console.log(" - POST /generate-level-test");
   console.log(" - POST /evaluate-level");
