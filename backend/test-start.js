@@ -12,7 +12,11 @@ console.log("GEMINI_API_KEY present:", !!process.env.GEMINI_API_KEY);
 const app = express();
 console.log("✅ Express app created");
 
-app.use(cors());
+app.use(cors({
+  origin: "http://localhost:3000",
+  exposedHeaders: ["X-Quiz-Id"]
+}));
+
 app.use(express.json());
 console.log("✅ Middleware added");
 
